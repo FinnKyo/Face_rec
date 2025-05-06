@@ -1,0 +1,38 @@
+<!-- login.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid p-0">
+    <div class="d-flex justify-content-center align-items-center vh-100" 
+         style="background-image: url('static/uploads/workspace-bg.jpg'); background-size: cover;">
+        <div class="login-container text-center" style="width: 400px;">
+            <h3 class="text-white mb-5">人脸识别门禁后台管理系统</h3>
+            
+            <div class="form-container bg-white bg-opacity-75 rounded-4 p-5">
+                <h4 class="mb-4">用户登陆</h4>
+                <form method="POST" action="{{ url_for('auth.login') }}">
+                    <div class="mb-4">
+                        <input type="text" class="form-control form-control-lg rounded-pill py-3" 
+                               id="username" name="username" placeholder="请输入用户名" required>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <input type="password" class="form-control form-control-lg rounded-pill py-3" 
+                               id="password" name="password" placeholder="请输入密码" required>
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-5">
+                        <button type="submit" class="btn btn-info btn-lg rounded-pill text-white py-2">
+                            登 录
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-3 text-end">
+                    <a href="{{ url_for('auth.register') }}" class="text-secondary text-decoration-none">注册</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

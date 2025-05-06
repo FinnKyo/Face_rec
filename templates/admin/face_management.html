@@ -1,0 +1,749 @@
+{% extends "base.html" %}
+
+{% block title %}人脸管理{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    {% if current_user.role == 'admin' %}
+        {% include 'admin/sidebar.html' %}
+    {% else %}
+        {% include 'client/sidebar.html' %}
+    {% endif %}
+    <div class="col-9">
+        <h2 class="mb-4">人脸管理</h2>
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">已登记人脸</h5>
+                <div>
+                    <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#bulkActionModal">
+                        批量操作
+                    </button>
+                    <a href="{{ url_for('face.face_learning') }}" class="btn btn-sm btn-primary">
+                        <i class="fas fa-plus"></i> 新增人脸
+                    </a>
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="facesTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAll"></th>
+                                <th>ID</th>
+                                <th>照片</th>
+                                <th>名称</th>
+                                <th>用户</th>
+                                <th>状态</th>
+                                <th>样本数量</th>
+                                <th>创建时间</th>
+                                <th>更新时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="facesTableBody">
+                            <tr>
+                                <td colspan="10" class="text-center">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Face Details Modal -->
+<div class="modal fade" id="faceDetailsModal" tabindex="-1" aria-labelledby="faceDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="faceDetailsModalLabel">人脸详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">基本信息</h6>
+                                <div id="faceInfo">
+                                    <p><strong>显示名称:</strong> <span id="detailsName"></span></p>
+                                    <p><strong>标识:</strong> <span id="detailsLabel"></span></p>
+                                    <p><strong>状态:</strong> <span id="detailsStatus"></span></p>
+                                    <p><strong>样本数:</strong> <span id="detailsSampleCount"></span></p>
+                                    <p><strong>创建时间:</strong> <span id="detailsCreatedAt"></span></p>
+                                    <p><strong>更新时间:</strong> <span id="detailsUpdatedAt"></span></p>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-sm btn-primary" id="btnRename">
+                                        <i class="fas fa-edit"></i> 重命名
+                                    </button>
+                                    <button class="btn btn-sm btn-warning" id="btnToggleAuth">
+                                        切换授权
+                                    </button>
+                                    <button class="btn btn-sm btn-info" onclick="window.location.href='/face-recognize/admin/face_learning'">
+                                        <i class="fas fa-camera"></i> 重新采集
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" id="btnDelete">
+                                        <i class="fas fa-trash"></i> 删除
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">用户关联</h6>
+                                <div id="userInfo">
+                                    <!-- User info will be populated here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">样本图像</h6>
+                                <div>
+                                    <button class="btn btn-sm btn-danger" id="btnDeleteSelected">
+                                        删除选中样本
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="sampleImages" class="d-flex flex-wrap gap-2">
+                                    <!-- Sample images will be populated here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Modal -->
+<div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="renameModalLabel">重命名</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="renameForm">
+                    <div class="mb-3">
+                        <label for="displayName" class="form-label">显示名称</label>
+                        <input type="text" class="form-control" id="displayName" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveRename">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Action Modal -->
+<div class="modal fade" id="bulkActionModal" tabindex="-1" aria-labelledby="bulkActionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkActionModalLabel">批量操作</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>请选择要执行的批量操作:</p>
+                <div class="list-group">
+                    <button type="button" class="list-group-item list-group-item-action" id="bulkAuthorize">
+                        批量授权
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action" id="bulkDeauthorize">
+                        批量取消授权
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action" id="bulkDelete">
+                        批量删除
+                    </button>
+                </div>
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-exclamation-triangle"></i> 注意: 批量操作将影响所有选中的人脸
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmationModalLabel">确认操作</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmationMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmAction">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    
+    let currentFaceId = null;
+    let selectedSamples = [];
+    let allFaces = [];
+
+    $(document).ready(function() {
+        // Load all faces
+        console.log("HI")
+        loadFaces();
+
+        // Handle select all checkbox
+        $('#selectAll').change(function() {
+            $('.face-checkbox').prop('checked', $(this).prop('checked'));
+        });
+
+        // Handle rename button
+        $('#btnRename').click(function() {
+            $('#displayName').val($('#detailsName').text());
+            $('#renameModal').modal('show');
+        });
+
+        // Handle save rename
+        $('#saveRename').click(function() {
+            const newName = $('#displayName').val();
+            if (!newName) return;
+
+            $.ajax({
+                url: '/face-recognize/api/rename_face',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    face_id: currentFaceId,
+                    display_name: newName
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        $('#renameModal').modal('hide');
+                        $('#detailsName').text(newName);
+                        
+                        // Update in table
+                        loadFaces();
+                        
+                        alert('名称已更新');
+                    } else {
+                        alert('错误: ' + response.error);
+                    }
+                },
+                error: function(xhr) {
+                    alert('请求错误: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Handle toggle authorization
+        $('#btnToggleAuth').click(function() {
+            $.ajax({
+                url: '/face-recognize/api/toggle_authorization',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    face_id: currentFaceId
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        // Update status
+                        $('#detailsStatus').html(
+                            response.is_authorized 
+                                ? '<span class="badge bg-success">已授权</span>' 
+                                : '<span class="badge bg-danger">未授权</span>'
+                        );
+                        
+                        // Update button text
+                        $('#btnToggleAuth').text(response.is_authorized ? '取消授权' : '授权');
+                        
+                        // Update in table
+                        loadFaces();
+                        
+                        alert(response.message);
+                    } else {
+                        alert('错误: ' + response.error);
+                    }
+                },
+                error: function(xhr) {
+                    alert('请求错误: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Handle delete button
+        $('#btnDelete').click(function() {
+            $('#confirmationMessage').text('确定要删除这个人脸数据吗? 此操作不可恢复。');
+            $('#confirmAction').off('click').on('click', function() {
+                deleteFace(currentFaceId);
+            });
+            $('#confirmationModal').modal('show');
+        });
+
+        // Handle bulk operations
+        $('#bulkAuthorize').click(function() {
+            const selectedIds = getSelectedFaceIds();
+            if (selectedIds.length === 0) {
+                alert('请至少选择一个人脸');
+                return;
+            }
+
+            $('#confirmationMessage').text(`确定要授权所选的 ${selectedIds.length} 个人脸吗?`);
+            $('#confirmAction').off('click').on('click', function() {
+                bulkAuthorization(selectedIds, true);
+            });
+            $('#confirmationModal').modal('show');
+            $('#bulkActionModal').modal('hide');
+        });
+
+        $('#bulkDeauthorize').click(function() {
+            const selectedIds = getSelectedFaceIds();
+            if (selectedIds.length === 0) {
+                alert('请至少选择一个人脸');
+                return;
+            }
+
+            $('#confirmationMessage').text(`确定要取消授权所选的 ${selectedIds.length} 个人脸吗?`);
+            $('#confirmAction').off('click').on('click', function() {
+                bulkAuthorization(selectedIds, false);
+            });
+            $('#confirmationModal').modal('show');
+            $('#bulkActionModal').modal('hide');
+        });
+
+        $('#bulkDelete').click(function() {
+            const selectedIds = getSelectedFaceIds();
+            if (selectedIds.length === 0) {
+                alert('请至少选择一个人脸');
+                return;
+            }
+
+            $('#confirmationMessage').text(`确定要删除所选的 ${selectedIds.length} 个人脸吗? 此操作不可恢复。`);
+            $('#confirmAction').off('click').on('click', function() {
+                bulkDelete(selectedIds);
+            });
+            $('#confirmationModal').modal('show');
+            $('#bulkActionModal').modal('hide');
+        });
+
+        // Handle delete selected samples
+        $('#btnDeleteSelected').click(function() {
+            if (selectedSamples.length === 0) {
+                alert('请至少选择一个样本');
+                return;
+            }
+
+            $('#confirmationMessage').text(`确定要删除所选的 ${selectedSamples.length} 个样本吗?`);
+            $('#confirmAction').off('click').on('click', function() {
+                deleteSelectedSamples();
+            });
+            $('#confirmationModal').modal('show');
+        });
+    });
+
+    function loadFaces() {
+        $.ajax({
+            url: '/face-recognize/api/list_registered_faces',
+            method: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    allFaces = response.faces;
+                    updateFacesTable(response.faces);
+                } else {
+                    alert('加载失败: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function updateFacesTable(faces) {
+        const tbody = $('#facesTableBody');
+        tbody.empty();
+
+        if (faces.length === 0) {
+            tbody.append(`
+                <tr>
+                    <td colspan="10" class="text-center">没有找到登记的人脸</td>
+                </tr>
+            `);
+            return;
+        }
+
+        faces.forEach(face => {
+            const row = $(`
+                <tr>
+                    <td><input type="checkbox" class="face-checkbox" value="${face.id}"></td>
+                    <td>${face.id}</td>
+                    <td>
+                        ${face.sample_image ? 
+                            `<img src="${face.sample_image}" alt="${face.display_name}" class="img-thumbnail" style="width: 50px; height: 50px; object-fit: cover;">` : 
+                            `<div class="bg-light text-center" style="width: 50px; height: 50px;"><i class="fas fa-user mt-2" style="font-size: 30px;"></i></div>`
+                        }
+                    </td>
+                    <td>${face.display_name}</td>
+                    <td>${face.user ? face.user.username : '游客'}</td>
+                    <td>
+                        ${face.is_authorized ? 
+                            '<span class="badge bg-success">已授权</span>' : 
+                            '<span class="badge bg-danger">未授权</span>'
+                        }
+                    </td>
+                    <td>${face.face_count}</td>
+                    <td>${face.created_at}</td>
+                    <td>${face.last_updated || '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewFaceDetails(${face.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-primary" onclick="renameFace(${face.id}, '${face.display_name}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm ${face.is_authorized ? 'btn-warning' : 'btn-success'}" onclick="toggleAuthorization(${face.id})">
+                            <i class="fas fa-${face.is_authorized ? 'lock' : 'unlock'}"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="confirmDeleteFace(${face.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `);
+            tbody.append(row);
+        });
+    }
+
+    function viewFaceDetails(faceId) {
+        currentFaceId = faceId;
+        
+        // Find face in allFaces
+        const face = allFaces.find(f => f.id === faceId);
+        if (!face) return;
+        
+        // Update basic info
+        $('#detailsName').text(face.display_name);
+        $('#detailsLabel').text(face.label);
+        $('#detailsStatus').html(
+            face.is_authorized 
+                ? '<span class="badge bg-success">已授权</span>' 
+                : '<span class="badge bg-danger">未授权</span>'
+        );
+        $('#detailsSampleCount').text(face.face_count);
+        $('#detailsCreatedAt').text(face.created_at);
+        $('#detailsUpdatedAt').text(face.last_updated || '-');
+        
+        // Update toggle button text
+        $('#btnToggleAuth').text(face.is_authorized ? '取消授权' : '授权');
+        
+        // Update user info
+        const userInfo = $('#userInfo');
+        userInfo.empty();
+        
+        if (face.user) {
+            userInfo.html(`
+                <p><strong>用户名:</strong> ${face.user.username}</p>
+                <p><strong>角色:</strong> ${face.user.role}</p>
+            `);
+        } else {
+            userInfo.html('<p>此人脸未关联用户</p>');
+        }
+        
+        // Load sample images
+        loadFaceSamples(faceId);
+        
+        // Show modal
+        $('#faceDetailsModal').modal('show');
+    }
+
+    function loadFaceSamples(faceId) {
+        $.ajax({
+            url: `/face-recognize/api/get_face_samples?face_id=${faceId}`,
+            method: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    updateSampleImages(response.samples);
+                } else {
+                    alert('加载样本失败: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function updateSampleImages(samples) {
+        const container = $('#sampleImages');
+        container.empty();
+        selectedSamples = [];
+        
+        if (samples.length === 0) {
+            container.html('<p class="text-center">没有样本图像</p>');
+            return;
+        }
+        
+        // Group samples by type
+        const normalSamples = samples.filter(s => !s.is_face);
+        const faceSamples = samples.filter(s => s.is_face);
+        
+        // Add original images
+        if (normalSamples.length > 0) {
+            container.append('<h6 class="w-100">原始图像:</h6>');
+            normalSamples.forEach(sample => {
+                container.append(`
+                    <div class="sample-container" style="position: relative;">
+                        <img src="${sample.url}" alt="${sample.filename}" class="img-thumbnail" style="width: 150px; height: 150px; object-fit: cover;">
+                        <div class="sample-info mt-1">
+                            <small>${sample.create_date}</small>
+                        </div>
+                        <div class="sample-actions mt-1">
+                            <button class="btn btn-sm btn-danger" onclick="deleteSample('${sample.filename}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `);
+            });
+        }
+        
+        // Add face samples
+        if (faceSamples.length > 0) {
+            container.append('<h6 class="w-100 mt-3">面部样本:</h6>');
+            faceSamples.forEach(sample => {
+                container.append(`
+                    <div class="sample-container" style="position: relative;">
+                        <div class="form-check position-absolute top-0 start-0 m-1">
+                            <input class="form-check-input sample-checkbox" type="checkbox" value="${sample.filename}" 
+                                   style="transform: scale(1.2);">
+                        </div>
+                        <img src="${sample.url}" alt="${sample.filename}" class="img-thumbnail" style="width: 150px; height: 150px; object-fit: cover;">
+                        <div class="sample-info mt-1">
+                            <small>${sample.create_date}</small>
+                        </div>
+                        <div class="sample-actions mt-1">
+                            <button class="btn btn-sm btn-danger" onclick="deleteSample('${sample.filename}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `);
+            });
+            
+            // Add handler for sample checkboxes
+            $('.sample-checkbox').change(function() {
+                const filename = $(this).val();
+                if ($(this).prop('checked')) {
+                    if (!selectedSamples.includes(filename)) {
+                        selectedSamples.push(filename);
+                    }
+                } else {
+                    selectedSamples = selectedSamples.filter(s => s !== filename);
+                }
+            });
+        }
+    }
+
+    function toggleAuthorization(faceId) {
+        $.ajax({
+            url: '/face-recognize/api/toggle_authorization',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                face_id: faceId
+            }),
+            success: function(response) {
+                if (response.success) {
+                    loadFaces();
+                    alert(response.message);
+                } else {
+                    alert('错误: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function renameFace(faceId, currentName) {
+        currentFaceId = faceId;
+        $('#displayName').val(currentName);
+        $('#renameModal').modal('show');
+    }
+
+    function confirmDeleteFace(faceId) {
+        currentFaceId = faceId;
+        $('#confirmationMessage').text('确定要删除这个人脸数据吗? 此操作不可恢复。');
+        $('#confirmAction').off('click').on('click', function() {
+            deleteFace(faceId);
+        });
+        $('#confirmationModal').modal('show');
+    }
+
+    function deleteFace(faceId) {
+        $.ajax({
+            url: '/face-recognize/api/delete_face',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                face_id: faceId
+            }),
+            success: function(response) {
+                if (response.success) {
+                    $('#confirmationModal').modal('hide');
+                    if ($('#faceDetailsModal').hasClass('show')) {
+                        $('#faceDetailsModal').modal('hide');
+                    }
+                    loadFaces();
+                    alert(response.message);
+                } else {
+                    alert('错误: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function deleteSample(filename) {
+        $.ajax({
+            url: '/face-recognize/api/delete_face_sample',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                face_id: currentFaceId,
+                filename: filename
+            }),
+            success: function(response) {
+                if (response.success) {
+                    loadFaceSamples(currentFaceId);
+                    // Update face count in details
+                    $('#detailsSampleCount').text(response.face_count);
+                    // Refresh table
+                    loadFaces();
+                } else {
+                    alert('错误: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function deleteSelectedSamples() {
+        if (selectedSamples.length === 0) return;
+        
+        const promises = [];
+        
+        selectedSamples.forEach(filename => {
+            const promise = $.ajax({
+                url: '/face-recognize/api/delete_face_sample',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    face_id: currentFaceId,
+                    filename: filename
+                })
+            });
+            promises.push(promise);
+        });
+        
+        Promise.all(promises)
+            .then(() => {
+                $('#confirmationModal').modal('hide');
+                loadFaceSamples(currentFaceId);
+                loadFaces();
+                alert(`已删除 ${selectedSamples.length} 个样本`);
+                selectedSamples = [];
+            })
+            .catch(error => {
+                alert('删除过程中发生错误');
+                console.error(error);
+            });
+    }
+
+    function getSelectedFaceIds() {
+        const selectedIds = [];
+        $('.face-checkbox:checked').each(function() {
+            selectedIds.push(parseInt($(this).val()));
+        });
+        return selectedIds;
+    }
+
+    function bulkAuthorization(faceIds, authorize) {
+        $.ajax({
+            url: '/face-recognize/api/bulk_authorization',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                face_ids: faceIds,
+                authorize: authorize
+            }),
+            success: function(response) {
+                if (response.success) {
+                    $('#confirmationModal').modal('hide');
+                    loadFaces();
+                    alert(response.message);
+                } else {
+                    alert('错误: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+
+    function bulkDelete(faceIds) {
+        $.ajax({
+            url: '/face-recognize/api/bulk_delete',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                face_ids: faceIds
+            }),
+            success: function(response) {
+                if (response.success) {
+                    $('#confirmationModal').modal('hide');
+                    loadFaces();
+                    alert(response.message);
+                } else {
+                    alert('错误: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('请求错误: ' + xhr.responseText);
+            }
+        });
+    }
+</script>
+{% endblock %}

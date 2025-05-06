@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+
+{% block title %}人脸录入{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        {% if current_user.role == 'admin' %}
+            {% include 'admin/sidebar.html' %}
+        {% else %}
+            {% include 'client/sidebar.html' %}
+        {% endif %}
+
+        <!-- Main Content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">人脸录入</h1>
+            </div>
+
+            <!-- Person Name Input -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <button id="startSessionBtn" class="btn btn-primary">开始录入</button>
+                    </div>
+                    <div class="form-text">系统将自动使用您的用户名 <strong>{{ current_user.username }}</strong> 来录入人脸数据</div>
+                </div>
+            </div>
+
+            <!-- Camera Feed -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <!-- Camera feed -->
+                            <div class="bg-light p-3 text-center" style="height: 400px;">
+                                <video id="videoFeed" style="display:none;" autoplay playsinline></video>
+                                <img id="cameraFeed" src="{{ url_for('static', filename='img/camera-placeholder.jpg') }}" 
+                                     alt="摄像头画面" class="img-fluid" style="max-height: 380px;">
+                            </div>
+                            <!-- Status message -->
+                            <div id="captureStatus" class="alert alert-info mt-3">
+                                准备开始人脸录入...
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <!-- Captured images -->
+                            <h5>已捕获的图像</h5>
+                            <div id="capturedImages" class="border p-2" style="height: 300px; overflow-y: auto;">
+                                <p class="text-muted text-center">尚未捕获图像</p>
+                            </div>
+                            <div class="alert alert-info mt-3">
+                                已拍: <span id="imageCount">0</span> 张
+                                <br>
+                                <small>建议拍摄至少3张不同角度的人脸照片以提高识别准确率</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-center mt-4 gap-3">
+                        <button id="captureBtn" class="btn btn-primary btn-lg" disabled>拍照</button>
+                        <button id="trainBtn" class="btn btn-success btn-lg" disabled>训练模型</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+// Global variables
+let sessionActive = false;
+let imageCount = 0;
+let stream = null;
+
+// DOM elements
+const startSessionBtn = document.getElementById('startSessionBtn');
+const captureBtn = document.getElementById('captureBtn');
+const trainBtn = document.getElementById('trainBtn');
+const cameraFeed = document.getElementById('cameraFeed');
+const videoFeed = document.getElementById('videoFeed');
+const captureStatus = document.getElementById('captureStatus');
+const imageCountEl = document.getElementById('imageCount');
+const capturedImagesEl = document.getElementById('capturedImages');
+
+// Initialize camera when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // We don't auto-initialize camera anymore, wait for user to start session
+    captureStatus.textContent = '准备开始人脸录入...';
+});
+
+
+startSessionBtn.addEventListener('click', function() {
+    // Start capture session using current user
+    fetch('/face-recognize/api/start_capture', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            use_current_user: true
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            sessionActive = true;
+            captureStatus.className = 'alert alert-info mt-3';
+            captureStatus.textContent = data.message + ' - 正在初始化相机...';
+            
+            // Now initialize the camera
+            initCamera()
+                .then(() => {
+                    captureBtn.removeAttribute('disabled');
+                    captureStatus.className = 'alert alert-success mt-3';
+                    captureStatus.textContent = data.message + ' - 相机已准备就绪，可以拍照';
+                    capturedImagesEl.innerHTML = '<p class="text-center">准备捕获图像...</p>';
+                    imageCount = 0;
+                    imageCountEl.textContent = '0';
+                })
+                .catch(error => {
+                    captureStatus.className = 'alert alert-danger mt-3';
+                    captureStatus.textContent = '相机初始化失败: ' + error.message;
+                });
+        } else {
+            captureStatus.className = 'alert alert-danger mt-3';
+            captureStatus.textContent = data.error;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        captureStatus.className = 'alert alert-danger mt-3';
+        captureStatus.textContent = '发生错误: ' + error;
+    });
+});
+
+// Initialize camera - returns a promise
+function initCamera() {
+    return new Promise((resolve, reject) => {
+        // Stop any existing stream
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Show the video element and hide the image
+        videoFeed.style.display = 'block';
+        videoFeed.style.maxHeight = '380px';
+        videoFeed.style.margin = '0 auto';
+        cameraFeed.style.display = 'none';
+        
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(videoStream) {
+                stream = videoStream;
+                videoFeed.srcObject = stream;
+                videoFeed.play().then(() => {
+                    console.log("Video is playing");
+                    resolve();
+                }).catch(err => {
+                    console.error("Error playing video:", err);
+                    reject(err);
+                });
+            })
+            .catch(function(error) {
+                console.error("Camera error:", error);
+                reject(error);
+            });
+    });
+}
+
+// Capture button
+captureBtn.addEventListener('click', function() {
+    if (!sessionActive) {
+        alert('请先开始录入会话');
+        return;
+    }
+    
+    if (!stream || !videoFeed.srcObject) {
+        captureStatus.className = 'alert alert-warning mt-3';
+        captureStatus.textContent = '相机未初始化，正在尝试重新初始化...';
+        
+        initCamera()
+            .then(() => {
+                setTimeout(takePicture, 1000);
+            })
+            .catch(error => {
+                captureStatus.className = 'alert alert-danger mt-3';
+                captureStatus.textContent = '相机初始化失败: ' + error.message;
+            });
+        return;
+    }
+    
+    takePicture();
+});
+
+// Function to take picture and send to server
+function takePicture() {
+    try {
+        captureStatus.className = 'alert alert-info mt-3';
+        captureStatus.textContent = '正在捕获...';
+        
+        // Create a canvas element to capture the image
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        
+        // Make sure we have valid video dimensions
+        if (!videoFeed.videoWidth || !videoFeed.videoHeight) {
+            console.error("Video dimensions:", videoFeed.videoWidth, videoFeed.videoHeight);
+            captureStatus.className = 'alert alert-danger mt-3';
+            captureStatus.textContent = '视频元素未正确初始化，请重试';
+            return;
+        }
+        
+        canvas.width = videoFeed.videoWidth;
+        canvas.height = videoFeed.videoHeight;
+        
+        console.log(`Canvas dimensions: ${canvas.width}x${canvas.height}`);
+        
+        // Draw video frame to canvas
+        context.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
+        
+        // Get image data as base64 string
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+        
+        console.log(`Image data length: ${imageData.length}`);
+        
+        if (imageData.length < 100) {
+            captureStatus.className = 'alert alert-danger mt-3';
+            captureStatus.textContent = '生成的图像数据无效，请重试';
+            return;
+        }
+        
+        // Also show the captured image in the cameraFeed
+        cameraFeed.src = imageData;
+        cameraFeed.style.display = 'block';
+        videoFeed.style.display = 'none';
+        
+        // Send image data to server
+        fetch('/face-recognize/capture', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image_data: imageData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                imageCount = data.count;
+                imageCountEl.textContent = imageCount;
+                
+                // Show the processed image with face detection
+                if (data.image_path) {
+                    // Show in the main camera feed
+                    cameraFeed.src = data.image_path + '?' + new Date().getTime();
+                    
+                    // Also add to the captured images list
+                    const displayImg = document.createElement('img');
+                    displayImg.src = data.image_path + '?' + new Date().getTime();
+                    displayImg.className = 'img-thumbnail mb-2';
+                    displayImg.style.width = '100%';
+                    
+                    if (capturedImagesEl.querySelector('p')) {
+                        capturedImagesEl.innerHTML = '';
+                    }
+                    capturedImagesEl.prepend(displayImg);
+                }
+                
+                captureStatus.className = 'alert alert-success mt-3';
+                captureStatus.textContent = `捕获成功! 检测到 ${data.faces_detected} 张脸`;
+                
+                // Show the video again after a brief moment
+                setTimeout(() => {
+                    if (sessionActive) {
+                        cameraFeed.style.display = 'none';
+                        videoFeed.style.display = 'block';
+                    }
+                }, 2000);
+                
+                if (imageCount >= 3) {
+                    trainBtn.removeAttribute('disabled');
+                }
+            } else {
+                captureStatus.className = 'alert alert-danger mt-3';
+                captureStatus.textContent = data.error || '捕获失败';
+                
+                // Show the video again
+                setTimeout(() => {
+                    if (sessionActive) {
+                        cameraFeed.style.display = 'none';
+                        videoFeed.style.display = 'block';
+                    }
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            captureStatus.className = 'alert alert-danger mt-3';
+            captureStatus.textContent = '发生错误: ' + error;
+            
+            // Show the video again
+            setTimeout(() => {
+                if (sessionActive) {
+                    cameraFeed.style.display = 'none';
+                    videoFeed.style.display = 'block';
+                }
+            }, 2000);
+        });
+    } catch (error) {
+        console.error('Error in takePicture:', error);
+        captureStatus.className = 'alert alert-danger mt-3';
+        captureStatus.textContent = '捕获过程中出错: ' + error.message;
+    }
+}
+
+
+// Train model button
+trainBtn.addEventListener('click', function() {
+    captureStatus.className = 'alert alert-info mt-3';
+    captureStatus.textContent = '正在训练模型...';
+    
+    fetch('/face-recognize/api/train_model', {
+        method: 'POST',
+        headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                use_current_user: true
+            })    
+        })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            captureStatus.className = 'alert alert-success mt-3';
+            
+            // Handle new faces information
+            let newFacesCount = data.new_faces ? data.new_faces.length : 0;
+            let newFacesMessage = newFacesCount > 0 
+                ? `新增 ${newFacesCount} 个人脸数据` 
+                : '没有新增人脸数据';
+                
+            captureStatus.textContent = `训练完成! 您的人脸数据已成功录入 (总共 ${data.total_faces} 张脸, ${newFacesMessage})`;
+            
+            // If we have new faces, we could also display them in more detail
+            if (newFacesCount > 0) {
+                let newFacesDetails = document.createElement('div');
+                newFacesDetails.className = 'mt-2 small';
+                newFacesDetails.innerHTML = '<strong>新增人脸:</strong><ul>';
+                
+                data.new_faces.forEach(face => {
+                    newFacesDetails.innerHTML += `<li>${face.display_name} (${face.face_count} 张图片)</li>`;
+                });
+                
+                newFacesDetails.innerHTML += '</ul>';
+                captureStatus.appendChild(newFacesDetails);
+            }
+            
+            // Reset session
+            sessionActive = false;
+            captureBtn.setAttribute('disabled', 'disabled');
+            trainBtn.setAttribute('disabled', 'disabled');
+            
+            // Stop the camera stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            // Hide video, show placeholder
+            videoFeed.style.display = 'none';
+            cameraFeed.src = "{{ url_for('static', filename='img/camera-placeholder.jpg') }}";
+            cameraFeed.style.display = 'block';
+        } else {
+            captureStatus.className = 'alert alert-danger mt-3';
+            
+            // Check if it's the OpenCV dependency error
+            if (data.error && data.error.includes('opencv-contrib-python')) {
+                captureStatus.innerHTML = `<strong>依赖错误:</strong> ${data.error}<br>
+                                          <small>您需要在服务器上安装缺少的OpenCV组件。请联系系统管理员执行上述命令。</small>`;
+            } else {
+                captureStatus.textContent = data.error || '训练失败';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        captureStatus.className = 'alert alert-danger mt-3';
+        captureStatus.textContent = '发生错误: ' + error;
+    });
+});
+</script>
+
+{% endblock %}

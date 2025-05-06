@@ -1,0 +1,656 @@
+{% extends "base.html" %}
+
+{% block title %}访客控制{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        {% if current_user.role == 'admin' %}
+        {% include 'admin/sidebar.html' %}
+        {% else %}
+        {% include 'client/sidebar.html' %}
+        {% endif %}
+
+        <!-- Main Content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <div
+                class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">访客控制</h1>
+            </div>
+
+            <div class="row">
+                <!-- Camera Feed -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5>访客识别</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="text-center mb-3">
+                                <img id="accessCameraFeed"
+                                    src="{{ url_for('static', filename='uploads/place-holder.png') }}" alt="摄像头画面"
+                                    class="img-fluid" style="max-height: 300px;">
+                            </div>
+                            <div id="accessResult" class="alert alert-info">
+                                准备识别访客...
+                            </div>
+                            <div class="d-flex justify-content-center mt-3">
+                                <button id="verifyAccessBtn" class="btn btn-primary btn-lg">识别访客</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Manual Entry -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5>手动登记</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="visitorForm">
+                                <div class="mb-3">
+                                    <label for="visitorName" class="form-label">访客姓名</label>
+                                    <input type="text" class="form-control" id="visitorName" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="visitorPurpose" class="form-label">来访目的</label>
+                                    <textarea class="form-control" id="visitorPurpose" rows="3"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-success">登记并开门</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <!-- Door Controls -->
+                <div class="mt-3">
+                    <div class="alert alert-info">
+                        门状态: <span id="doorStatus">已关闭</span>
+                        <div id="autoCloseTimer" class="d-none">
+                            <div class="progress mt-2">
+                                <div id="timerProgress" class="progress-bar progress-bar-striped progress-bar-animated"
+                                    role="progressbar" style="width: 100%"></div>
+                            </div>
+                            <small>门将在 <span id="secondsRemaining">10</span> 秒后自动关闭</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Access Logs -->
+            <!--<div class="card">
+                <div class="card-header">
+                    <h5>门禁记录</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户/访客</th>
+                                <th>操作</th>
+                                <th>时间</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in door_logs %}
+                            <tr>
+                                <td>{{ log.id }}</td>
+                                <td>
+                                    {% if log.visitor_name %}
+                                    {{ log.visitor_name }}<span class="badge bg-info">访客</span>
+                                    {% else %}
+                                    {{ log.user.username }} 
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if log.door_action == 'open' %}
+                                    <span class="badge bg-success">开门</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">关门</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ log.entry_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ log.notes or '' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center">暂无门禁记录</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>     -->
+        </main>
+    </div>
+</div>
+
+<script>
+
+    // DOM elements - using more reliable selectors
+    const verifyAccessBtn = document.getElementById('verifyAccessBtn');
+    const accessResult = document.getElementById('accessResult');
+    const visitorForm = document.getElementById('visitorForm');
+    const doorStatusElement = document.getElementById('doorStatus');
+    const doorLogTableBody = document.querySelector('table tbody'); // Directly target the table body
+
+    // Video streaming variables
+    let videoStream = null;
+    let isStreaming = false;
+    let videoElement = null;
+    let captureInterval = null;
+    let recognitionActive = false;
+    let doorOpen = false;
+    let autoCloseTimerId = null;
+    let secondsLeft = 10;
+    let pageInitialized = false;
+
+    // Initialize the page when loaded
+    document.addEventListener('DOMContentLoaded', function () {
+        // Check if we've already initialized to prevent duplicate initialization
+        if (pageInitialized) return;
+        pageInitialized = true;
+
+        // Initialize the door status display
+        updateDoorStatusDisplay();
+    });
+
+    // Initialize camera live view
+    function initializeLiveCamera() {
+        // Create video element if it doesn't exist
+        if (!videoElement) {
+            const cameraFeed = document.getElementById('accessCameraFeed');
+            if (!cameraFeed) {
+                console.error("Could not find camera feed element");
+                return;
+            }
+
+            videoElement = document.createElement('video');
+            videoElement.setAttribute('autoplay', '');
+            videoElement.setAttribute('playsinline', '');
+            videoElement.style.width = '100%';
+            videoElement.style.maxHeight = '300px';
+            videoElement.style.objectFit = 'cover'; // Better fit in the container
+            videoElement.style.borderRadius = '4px'; // Rounded corners for better look
+
+            // Replace the placeholder image with the video element
+            cameraFeed.parentNode.replaceChild(videoElement, cameraFeed);
+        }
+
+        // Access the webcam
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function (stream) {
+                    videoStream = stream;
+                    videoElement.srcObject = stream;
+                    isStreaming = true;
+
+                    // Update button text and appearance
+                    verifyAccessBtn.textContent = '停止识别';
+                    verifyAccessBtn.classList.remove('btn-primary');
+                    verifyAccessBtn.classList.add('btn-danger');
+
+                    // Start automatic recognition
+                    startRecognition();
+                })
+                .catch(function (error) {
+                    console.error("Camera error:", error);
+                    accessResult.className = 'alert alert-danger';
+                    accessResult.textContent = '摄像头访问失败: ' + error.message;
+                });
+        } else {
+            accessResult.className = 'alert alert-danger';
+            accessResult.textContent = '您的浏览器不支持摄像头访问';
+        }
+    }
+
+    // Stop camera streaming
+    function stopLiveCamera() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoElement.srcObject = null;
+            videoStream = null;
+            isStreaming = false;
+
+            // Update button text and appearance
+            verifyAccessBtn.textContent = '开始识别访客';
+            verifyAccessBtn.classList.remove('btn-danger');
+            verifyAccessBtn.classList.add('btn-primary');
+
+            // Stop recognition
+            stopRecognition();
+
+            // Reset results
+            accessResult.className = 'alert alert-info';
+            accessResult.textContent = '准备识别访客...';
+        }
+    }
+
+    // Start automatic face recognition
+    function startRecognition() {
+        recognitionActive = true;
+        accessResult.className = 'alert alert-info';
+        accessResult.textContent = '正在识别中...请保持面部在摄像头前';
+
+        // Perform face recognition every 3 seconds
+        captureInterval = setInterval(performFaceRecognition, 3000);
+    }
+
+    // Stop automatic face recognition
+    function stopRecognition() {
+        recognitionActive = false;
+        if (captureInterval) {
+            clearInterval(captureInterval);
+            captureInterval = null;
+        }
+    }
+
+    // Perform face recognition
+    function performFaceRecognition() {
+        if (!recognitionActive || !isStreaming) return;
+
+        // Create a canvas to capture the current video frame
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+        // Convert canvas to blob
+        canvas.toBlob(function (blob) {
+            const formData = new FormData();
+            formData.append('image', blob, 'live-capture.jpg');
+
+            // Send to server for recognition
+            fetch('/face-recognize/api/verify_access_live', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Update result message
+                        if (data.authorized) {
+                            accessResult.className = 'alert alert-success';
+                            accessResult.innerHTML = `<strong>授权通过!</strong> 检测到: ${data.detected_faces[0].name}`;
+                            openDoor();
+                            updateDoorLogTable();
+                            stopRecognition();
+                        } else {
+                            accessResult.className = 'alert alert-warning';
+                            if (data.detected_faces && data.detected_faces.length > 0) {
+                                accessResult.innerHTML = `<strong>未授权!</strong> 检测到: ${data.detected_faces[0].name} (未授权)`;
+                            } else {
+                                accessResult.innerHTML = '<strong>正在检测中...</strong> 未识别出已授权的人脸';
+                            }
+                        }
+
+                        // Only update the table if there was an actual recognition
+                        if (data.authorized || (data.detected_faces && data.detected_faces.length > 0)) {
+                            fetchAndUpdateLogTable();
+                        }
+                    } else {
+                        accessResult.className = 'alert alert-danger';
+                        accessResult.textContent = data.error || '识别失败';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    accessResult.className = 'alert alert-danger';
+                    accessResult.textContent = '发生错误: ' + error;
+                });
+        }, 'image/jpeg');
+    }
+
+    // Toggle camera button
+    verifyAccessBtn.addEventListener('click', function () {
+        if (isStreaming) {
+            stopLiveCamera();
+        } else {
+            initializeLiveCamera();
+        }
+    });
+
+    // Open the door
+    function openDoor() {
+        // Reset and clear any existing timer
+        if (autoCloseTimerId) {
+            clearInterval(autoCloseTimerId);
+        }
+
+        // Update door status
+        doorOpen = true;
+        updateDoorStatusDisplay();
+
+        // Send door open command to server
+        fetch("/face-recognize/api/door_control", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                action: "open",
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    console.error("开门操作失败：", data.error);
+                }
+            })
+            .catch(error => console.error("错误:", error));
+
+        // Show auto-close timer
+        const autoCloseTimer = document.getElementById('autoCloseTimer');
+        if (autoCloseTimer) {
+            autoCloseTimer.classList.remove('d-none');
+            secondsLeft = 10;
+            const secondsRemaining = document.getElementById('secondsRemaining');
+            if (secondsRemaining) {
+                secondsRemaining.textContent = secondsLeft;
+            }
+
+            // Start countdown
+            autoCloseTimerId = setInterval(function () {
+                secondsLeft--;
+                if (secondsRemaining) {
+                    secondsRemaining.textContent = secondsLeft;
+                }
+                const timerProgress = document.getElementById('timerProgress');
+                if (timerProgress) {
+                    timerProgress.style.width = (secondsLeft * 10) + '%';
+                }
+
+                if (secondsLeft <= 0) {
+                    closeDoor();
+                }
+            }, 1000);
+        }
+    }
+
+    // Close the door
+    function closeDoor() {
+        // Clear auto-close timer
+        if (autoCloseTimerId) {
+            clearInterval(autoCloseTimerId);
+            autoCloseTimerId = null;
+        }
+
+        // Update door status
+        doorOpen = false;
+        updateDoorStatusDisplay();
+
+        // Send door close command to server
+        fetch("/face-recognize/api/door_control", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                action: "close",
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // After the door is closed, update the door log table
+                    fetchAndUpdateLogTable();
+                    // Restart recognition if camera is still active
+                    if (isStreaming) {
+                        startRecognition();
+                    }
+                } else {
+                    console.error("关门操作失败：", data.error);
+                }
+            })
+            .catch(error => console.error("错误:", error));
+    }
+
+    // Update door status display
+    function updateDoorStatusDisplay() {
+        const doorStatus = document.getElementById('doorStatus');
+        if (doorStatus) {
+            doorStatus.textContent = doorOpen ? '已开启' : '已关闭';
+            doorStatus.className = doorOpen ? 'text-success fw-bold' : 'text-danger fw-bold';
+        }
+
+        const autoCloseTimer = document.getElementById('autoCloseTimer');
+        if (autoCloseTimer) {
+            if (doorOpen) {
+                autoCloseTimer.classList.remove('d-none');
+            } else {
+                autoCloseTimer.classList.add('d-none');
+            }
+        }
+    }
+
+    // Function for updating the door log table - prevents multiple different implementations
+    function updateDoorLogTable() {
+        fetchAndUpdateLogTable();
+    }
+
+    // Single function to fetch and update table with consistent styling
+    function fetchAndUpdateLogTable() {
+        fetch("/face-recognize/api/door_logs")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && doorLogTableBody) {
+                    // Clear the table first
+                    doorLogTableBody.innerHTML = "";
+
+                    // Check if we have any logs
+                    if (!data.door_logs || data.door_logs.length === 0) {
+                        const row = document.createElement("tr");
+                        const cell = document.createElement("td");
+                        cell.colSpan = 5;
+                        cell.className = "text-center";
+                        cell.textContent = "暂无门禁记录";
+                        row.appendChild(cell);
+                        doorLogTableBody.appendChild(row);
+                        return;
+                    }
+
+                    // Add each log to the table with consistent styling
+                    data.door_logs.forEach(log => {
+                        const row = document.createElement("tr");
+                        row.className = "align-middle"; // Vertically align content
+
+                        // ID column
+                        const idCell = document.createElement("td");
+                        idCell.textContent = log.id;
+                        idCell.className = "text-center";
+                        row.appendChild(idCell);
+
+                        // User/Visitor column
+                        const userCell = document.createElement("td");
+                        if (log.visitor_name) {
+                            const name = document.createTextNode(log.visitor_name + " ");
+                            userCell.appendChild(name);
+
+                            const badge = document.createElement("span");
+                            badge.className = "badge bg-info";
+                            badge.textContent = "访客";
+                            userCell.appendChild(badge);
+                        } else if (log.user) {
+                            userCell.textContent = log.user.username || log.user;
+                        } else {
+                            userCell.textContent = "未知";
+                        }
+                        row.appendChild(userCell);
+
+                        // Action column
+                        const actionCell = document.createElement("td");
+                        const actionBadge = document.createElement("span");
+                        console.log("log.door_action", log.door_action)
+                        if (log.door_action === 'open') {
+                            actionBadge.className = "badge bg-success";
+                            actionBadge.textContent = "开门";
+                        } else if (log.door_action === 'close') {
+                            actionBadge.className = "badge bg-danger";
+                            actionBadge.textContent = "关门";
+                        } else if (log.door_action === 'REJECT') {
+                            actionBadge.className = "badge bg-danger";
+                            actionBadge.textContent = "REJECT";
+                        } else {
+                            actionBadge.className = "badge bg-secondary";
+                            actionBadge.textContent = log.door_action || "未知";
+                        }
+
+                        actionCell.appendChild(actionBadge);
+                        actionCell.className = "text-center";
+                        row.appendChild(actionCell);
+
+                        // Time column
+                        const timeCell = document.createElement("td");
+                        try {
+                            const date = new Date(log.entry_time);
+                            timeCell.textContent = date.toLocaleString('zh-CN');
+                        } catch (e) {
+                            timeCell.textContent = log.entry_time || "未知";
+                        }
+                        row.appendChild(timeCell);
+
+                        // Notes column
+                        const notesCell = document.createElement("td");
+                        notesCell.textContent = log.notes || "";
+                        row.appendChild(notesCell);
+
+                        // Add the row to the table
+                        doorLogTableBody.appendChild(row);
+                    });
+                } else {
+                    console.error("无法获取门禁记录或记录为空");
+                }
+            })
+            .catch(error => {
+                console.error("获取门禁记录时出错:", error);
+                // Handle error state in the UI if needed
+            });
+    }
+
+    // Visitor form submission
+    visitorForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const visitorName = document.getElementById('visitorName').value;
+        const visitorPurpose = document.getElementById('visitorPurpose').value;
+
+        // Check if have camera access for capturing visitor image
+        if (!isStreaming) {
+            // If camera is not active, initialize it first
+            initializeLiveCamera();
+
+            // Set a small delay to ensure camera is ready
+            setTimeout(() => captureAndSubmitVisitor(visitorName, visitorPurpose), 1000);
+        } else {
+            // Camera is already active, proceed with capture
+            captureAndSubmitVisitor(visitorName, visitorPurpose);
+        }
+    });
+
+    // Function to capture image and submit visitor data
+    function captureAndSubmitVisitor(visitorName, visitorPurpose) {
+        // Create a canvas to capture the current video frame
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+
+        // Use video element if available, otherwise use placeholder
+        if (videoElement && videoElement.videoWidth > 0) {
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        } else {
+            // If no video, use a message in the canvas
+            canvas.width = 400;
+            canvas.height = 300;
+            context.fillStyle = "#f0f0f0";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.fillStyle = "#333333";
+            context.font = "20px Arial";
+            context.textAlign = "center";
+            context.fillText("No camera image available", canvas.width / 2, canvas.height / 2);
+        }
+
+        // Convert canvas to blob
+        canvas.toBlob(function (blob) {
+            const formData = new FormData();
+            formData.append('image', blob, 'visitor-capture.jpg');
+            formData.append('name', visitorName);
+            formData.append('purpose', visitorPurpose);
+
+            // Show loading state
+            const submitBtn = visitorForm.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 处理中...';
+
+            // Send to server
+            fetch('/face-recognize/api/add_visitor_and_open_door', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    // Reset form
+                    visitorForm.reset();
+
+                    // Reset button
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
+
+                    if (data.success) {
+                        // Show success message
+                        accessResult.className = 'alert alert-success';
+                        accessResult.innerHTML = `<strong>访客登记成功!</strong> ${visitorName} 已登记并开门`;
+
+                        // Open the door
+                        openDoor();
+
+                        // Update the table instead of reloading the page
+                        fetchAndUpdateLogTable();
+                    } else {
+                        // Show error
+                        accessResult.className = 'alert alert-danger';
+                        accessResult.textContent = '访客登记失败: ' + (data.error || '未知错误');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+
+                    // Reset button
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
+
+                    // Show error
+                    accessResult.className = 'alert alert-danger';
+                    accessResult.textContent = '发生错误: ' + error;
+                });
+        }, 'image/jpeg', 0.9); // 0.9 quality
+    }
+
+    // Fetch the door logs on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchAndUpdateLogTable();
+    });
+
+    // Clean up when leaving the page
+    window.addEventListener('beforeunload', function () {
+        stopLiveCamera();
+    });
+</script>
+
+{% endblock %}

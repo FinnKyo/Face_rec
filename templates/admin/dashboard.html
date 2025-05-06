@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}管理员仪表板{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        {% if current_user.role == 'admin' %}
+            {% include 'admin/sidebar.html' %}
+        {% else %}
+            {% include 'client/sidebar.html' %}
+        {% endif %}
+
+        <!-- Main Content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">管理</h1>
+            </div>
+
+            <!-- Subjects Table -->
+            <div class=" mt-4">
+                <h2 class="mb-4">管理员中心</h2>
+
+                <!-- 用户管理 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5>用户管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>用户名</th>
+                                    <th>角色</th>
+                                    <th>注册时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>{{ user.username }}</td>
+                                    <td>{{ user.role }}</td>
+                                    <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td>
+                                        <button class="btn btn-primary"
+                                            onclick="openEditModal('{{ user.id }}', '{{ user.username }}', '{{ user.role }}')">
+                                            编辑
+                                        </button>
+                                        {% if user.role != 'admin' %}
+                                        <a href="{{ url_for('admin.delete_user', user_id=user.id) }}"
+                                            class="btn btn-danger btn-sm" onclick="return confirm('确定删除该用户?')">删除</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center">暂无用户</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="editModal" class="modal">
+                <div class="modal-content">
+                    <span class="close" onclick="closeEditModal()">&times;</span>
+                    <h3>编辑用户</h3>
+                    <form id="editUserForm">
+                        <input type="hidden" id="editUserId" name="user_id">
+
+                        <label>用户名：</label>
+                        <input type="text" id="editUsername" name="username" required>
+
+                        <label>角色：</label>
+                        <select id="editRole" name="role">
+                            <option value="admin">Admin</option>
+                            <option value="client">Client</option>
+                        </select>
+
+                        <button type="submit">保存</button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<style>
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.4);
+    }
+
+    .modal-content {
+        background-color: white;
+        margin: 10% auto;
+        padding: 20px;
+        width: 50%;
+        border-radius: 5px;
+    }
+
+    .close {
+        float: right;
+        font-size: 28px;
+        cursor: pointer;
+    }
+</style>
+
+<!-- JavaScript 控制弹窗 & AJAX -->
+<script>
+    function openEditModal(userId, username, role) {
+        document.getElementById('editUserId').value = userId;
+        document.getElementById('editUsername').value = username;
+        document.getElementById('editRole').value = role;
+        document.getElementById('editModal').style.display = 'block';
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    // 使用 AJAX 发送数据
+    document.getElementById('editUserForm').addEventListener('submit', function (event) {
+        event.preventDefault(); // 阻止表单默认提交行为
+
+        let userId = document.getElementById('editUserId').value;
+        let username = document.getElementById('editUsername').value;
+        let role = document.getElementById('editRole').value;
+
+        fetch("{{ url_for('admin.edit_user') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                username: username,
+                role: role
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("用户信息已更新！");
+                    location.reload(); // 刷新页面
+                } else {
+                    alert("更新失败：" + data.error);
+                }
+            })
+            .catch(error => console.error("错误:", error));
+    });
+</script>
+
+{% endblock %}
