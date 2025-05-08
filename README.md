@@ -1,7 +1,5 @@
 
-# face_recognize
-
-人脸识别后台管理门禁系统
+# 基于flask的人脸识别门禁后台管理系统
 
 安装requirements.txt
 
