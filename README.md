@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project is a backend management system for facial recognition-based access control, built using the Flask web framework. It provides secure access management by recognizing authorized users through facial recognition technology.
+This project is a backend management system for facial recognition-based access control, built using the Flask web framework and OpenCV library. It provides secure access management by recognizing authorized users through facial recognition technology.
 
 ## Features
 
