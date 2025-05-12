@@ -1,9 +1,8 @@
 
-# 基于flask的人脸识别门禁后台管理系统
+# Flask-based Facial Recognition Access Control Backend Management System
 
-安装requirements.txt
+install -r requirements.txt
 
-运行app.py
+python app.py
 
-默认管理员账号密码：admin
-                password
+
